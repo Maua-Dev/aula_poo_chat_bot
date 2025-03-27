@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat com {{ bot_name }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+    <!-- Incluir a biblioteca marked.js para renderizar markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Highlight.js para destacar códigos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1><i class="fas fa-robot"></i> Chat com {{ bot_name }}</h1>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <!-- Mensagens serão inseridas aqui via JavaScript -->
+        </div>
+        <div class="typing-indicator" id="typing-indicator">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="chat-input">
+            <form id="message-form">
+                <input type="text" id="message-input" placeholder="Digite sua mensagem..." autocomplete="off">
+                <button type="submit"><i class="fas fa-paper-plane"></i></button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const sessionId = "{{ session_id }}";
+        const messageInput = document.getElementById('message-input');
+        const messageForm = document.getElementById('message-form');
+        const chatMessages = document.getElementById('chat-messages');
+        const typingIndicator = document.getElementById('typing-indicator');
+
+        // Exibir a mensagem de boas-vindas ao carregar a página
+        // Esta função será chamada no início para adicionar a primeira mensagem de bot que você teria recebido pelo WebSocket
+        function addInitialBotMessage() {
+            // Você pode adicionar isso como uma rota separada para buscar a mensagem inicial ou
+            // inclui-la diretamente no template via Jinja
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <p>Olá! Eu sou o {{ bot_name }}. Como posso ajudar você hoje?</p>
+                </div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Adicionar mensagem do usuário ao chat
+        function addUserMessage(content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user-message';
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <p>${content}</p>
+                </div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Adicionar mensagem do bot ao chat (renderizando markdown)
+        function addBotMessage(content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot-message';
+
+            // Renderizar o conteúdo markdown usando a biblioteca marked
+            const renderedContent = marked.parse(content);
+
+            messageDiv.innerHTML = `
+                <div class="message-content markdown-content">
+                    ${renderedContent}
+                </div>
+            `;
+            chatMessages.appendChild(messageDiv);
+
+            // Aplicar highlight.js para destacar blocos de código
+            messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Mostrar indicador de digitação
+        function showTypingIndicator() {
+            typingIndicator.style.display = 'flex';
+        }
+
+        // Ocultar indicador de digitação
+        function hideTypingIndicator() {
+            typingIndicator.style.display = 'none';
+        }
+
+        // Enviar mensagem para o servidor via AJAX
+        async function sendMessage(content) {
+            try {
+                showTypingIndicator();
+
+                const response = await fetch(`/send_message/${sessionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: content
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erro na comunicação com o servidor');
+                }
+
+                const data = await response.json();
+                hideTypingIndicator();
+                addBotMessage(data.response);
+            } catch (error) {
+                console.error('Erro ao enviar mensagem:', error);
+                hideTypingIndicator();
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'message error-message';
+                errorDiv.innerHTML = `
+                    <div class="message-content error">
+                        <p>Erro ao se comunicar com o servidor. Por favor, tente novamente.</p>
+                    </div>
+                `;
+                chatMessages.appendChild(errorDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        }
+
+        // Tratar envio do formulário
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const message = messageInput.value.trim();
+            if (message) {
+                addUserMessage(message);
+                sendMessage(message);
+                messageInput.value = '';
+                messageInput.focus();
+            }
+        });
+
+        // Inicializar chat ao carregar a página
+        document.addEventListener('DOMContentLoaded', () => {
+            addInitialBotMessage();
+
+            // Configurar marked.js para usar highlight.js
+            marked.setOptions({
+                highlight: function(code, lang) {
+                    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                    return hljs.highlight(code, { language }).value;
+                },
+                langPrefix: 'hljs language-', // Adicionar prefixo de classe CSS para highlight.js
+                breaks: true,                 // Adicionar quebras de linha
+                gfm: true                     // Usar GitHub Flavored Markdown
+            });
+        });
+    </script>
+</body>
+</html>
